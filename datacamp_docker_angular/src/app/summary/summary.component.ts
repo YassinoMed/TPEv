@@ -22,7 +22,7 @@ export class SummaryComponent implements OnInit {
       
     response => {
       let standings = response;
-      let avStanding = standings.find(x => x.team_name === 'Aston Villa');
+      let avStanding = standings.find(x => x.team_name === 'Real Madrid');
       if (typeof avStanding === 'undefined') {
         this.getTestLeaguePosition();
       } else {
@@ -37,6 +37,6 @@ export class SummaryComponent implements OnInit {
 
   private getTestLeaguePosition(): void {
     let standings = this.footballDataService.retrieveTestStandings();
-    this.position = standings.find(x => x.team_name === 'Aston Villa').overall_league_position;
+    this.position = standings.find(x => x.team_name === 'Real Madrid').overall_league_position;
   }
 }

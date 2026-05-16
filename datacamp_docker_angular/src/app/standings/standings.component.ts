@@ -61,8 +61,8 @@ export class StandingsComponent implements OnInit {
 
     switch(team){
 
-      case 'Aston Villa': {
-        return "astonvilla-picture";
+      case 'Real Madrid': {
+        return "realmadrid-picture";
       }
       case 'Birmingham City': {
         return 'birmigham-picture';
@@ -159,7 +159,7 @@ export class StandingsComponent implements OnInit {
   }
 
   private isAVInStandings(standings: Standing[]): boolean{
-    let avStanding = standings.find(x => x.team_name === 'Aston Villa');
+    let avStanding = standings.find(x => x.team_name === 'Real Madrid');
 
     if (typeof avStanding === 'undefined') {
       return false;

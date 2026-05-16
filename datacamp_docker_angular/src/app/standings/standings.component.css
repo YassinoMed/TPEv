@@ -36,7 +36,7 @@
     align-items: center;
 }
 
-.astonvilla-picture, .birmigham-picture, .blackburn-picture, .bolton-picture,
+.realmadrid-picture, .birmigham-picture, .blackburn-picture, .bolton-picture,
 .brentford-picture, .bristol-picture, .derby-picture, .hull-picture,
 .ipswich-picture, .leeds-picture, .middle-picture, .millwall-picture,
 .norwich-picture, .nottingham-picture, .preston-picture, .qpr-picture,
@@ -47,7 +47,7 @@
     margin-right: 5px;
 }
 
-.astonvilla-picture {
+.realmadrid-picture {
     content: url("/assets/images/logo/as_logo.svg");
 }
 
