@@ -1,10 +1,10 @@
 pipeline {
-    agent { label 'remote' }
+    agent any
 
     environment {
-        // Nom de l'image Docker avec votre compte DockerHub
         DOCKER_IMAGE = "mohamedyassinebouneb/aston-villa-app"
-        // Le tag sera défini dynamiquement dans le stage Setup
+        CONTAINER_NAME = "angular-app-deployed"
+        HOST_PORT = "8085"
     }
 
     stages {
@@ -15,86 +15,61 @@ pipeline {
             }
         }
 
-        stage('Setup Tag & Permissions') {
+        stage('Setup Tag') {
             steps {
                 script {
-                    // Fix des permissions du socket Docker pour l'agent
-                    sh 'sudo chmod 666 /var/run/docker.sock || true'
-                    
-                    // Utilisation de git rev-parse pour obtenir le hash court du commit
                     env.DOCKER_TAG = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
-                    echo "Docker Tag généré : ${env.DOCKER_TAG}"
+                    echo "Docker Tag : ${env.DOCKER_TAG}"
                 }
             }
         }
 
         stage('Build Image') {
             steps {
-                echo "Construction de l'image Docker : ${DOCKER_IMAGE}:${DOCKER_TAG}..."
-                // Utilisation du cache Docker pour optimiser la durée de build
+                echo "Construction de ${DOCKER_IMAGE}:${DOCKER_TAG}..."
                 dir('datacamp_docker_angular') {
                     sh "docker build --pull --cache-from ${DOCKER_IMAGE}:latest -t ${DOCKER_IMAGE}:${DOCKER_TAG} -t ${DOCKER_IMAGE}:latest ."
                 }
             }
         }
 
-        stage('Test & Healthcheck Docker') {
+        stage('Test Docker Image') {
             steps {
-                echo "Test de l'image Docker..."
-                // Validation très simple : on vérifie que Nginx peut être lancé
+                echo "Test de l'image (nginx -t)..."
                 sh "docker run --rm ${DOCKER_IMAGE}:${DOCKER_TAG} nginx -t"
             }
         }
 
         stage('Push to DockerHub') {
             steps {
-                // Nécessite un credential de type "Username with password" nommé 'dockerhub-credentials'
                 withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', passwordVariable: 'DOCKERHUB_PASS', usernameVariable: 'DOCKERHUB_USER')]) {
-                    echo 'Connexion à DockerHub...'
                     sh "echo \$DOCKERHUB_PASS | docker login -u \$DOCKERHUB_USER --password-stdin"
-                    echo "Push de l'image sur DockerHub..."
                     sh "docker push ${DOCKER_IMAGE}:${DOCKER_TAG}"
                     sh "docker push ${DOCKER_IMAGE}:latest"
                 }
             }
         }
 
-        stage('Deploy to Agent (SSH)') {
+        stage('Deploy Container') {
             steps {
-                echo "Déploiement sur le serveur distant jenkins-agent..."
-                // Utilisation de sshagent avec le credential existant 'agent-key'
-                sshagent(credentials: ['agent-key']) {
-                    sh """
-                        # Désactivation de la vérification stricte des clés hôtes pour le déploiement interne
-                        SSH_CMD="ssh -o StrictHostKeyChecking=no jenkins@jenkins-agent"
-
-                        echo "1. Récupération de la nouvelle image..."
-                        \$SSH_CMD "docker pull ${DOCKER_IMAGE}:${DOCKER_TAG}"
-
-                        echo "2. Arrêt et suppression de l'ancien conteneur s'il existe..."
-                        \$SSH_CMD "docker stop angular-app-container || true"
-                        \$SSH_CMD "docker rm angular-app-container || true"
-
-                        echo "3. Lancement du nouveau conteneur (mapping 8085 -> 80)..."
-                        \$SSH_CMD "docker run -d --name angular-app-container -p 8085:80 ${DOCKER_IMAGE}:${DOCKER_TAG}"
-                    """
-                }
+                echo "Déploiement local du conteneur..."
+                sh """
+                    docker stop ${CONTAINER_NAME} || true
+                    docker rm ${CONTAINER_NAME} || true
+                    docker run -d --name ${CONTAINER_NAME} -p ${HOST_PORT}:80 ${DOCKER_IMAGE}:${DOCKER_TAG}
+                """
             }
         }
 
         stage('Verify Deployment') {
             steps {
-                echo "Vérification du déploiement..."
-                // Attente que le conteneur soit prêt
                 sleep time: 5, unit: 'SECONDS'
-                // Test sur le port exposé. Comme le conteneur tourne sur l'agent, on le contacte depuis le workspace Jenkins.
-                // Selon le mapping de port de la machine hôte/agent (8085).
                 sh """
-                    APP_IP=\$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' angular-app-container)
-                    if curl -s http://\${APP_IP}:80 > /dev/null; then
-                        echo "Le déploiement est un succès ! L'application répond."
+                    APP_IP=\$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${CONTAINER_NAME})
+                    if curl -sf http://\${APP_IP}:80 > /dev/null; then
+                        echo "Déploiement OK — accessible sur http://localhost:${HOST_PORT}"
                     else
-                        echo "Échec : L'application ne répond pas."
+                        echo "Échec : l'application ne répond pas."
                         exit 1
                     fi
                 """
@@ -104,19 +79,11 @@ pipeline {
 
     post {
         success {
-            echo "Pipeline terminée avec succès !"
-            // Nettoyage de l'image en local pour libérer de l'espace
+            echo "Pipeline terminée avec succès. App dispo sur http://localhost:${HOST_PORT}"
             sh "docker rmi ${DOCKER_IMAGE}:${DOCKER_TAG} || true"
         }
         failure {
-            echo "La pipeline a échoué. Exécution d'un rollback..."
-            // Rollback basique: redémarrer la dernière image stable (latest)
-            sshagent(credentials: ['agent-key']) {
-                sh """
-                    ssh -o StrictHostKeyChecking=no jenkins@jenkins-agent "docker stop angular-app-container || true && docker rm angular-app-container || true && docker run -d --name angular-app-container -p 8085:80 ${DOCKER_IMAGE}:latest"
-                """
-            }
-            error("La pipeline a échoué. Vérifiez les logs.")
+            echo "Pipeline échouée — voir les logs ci-dessus."
         }
         always {
             echo "Fin du job."
